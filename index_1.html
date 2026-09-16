@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pareto Breakdown — Dashboard Reliability</title>
+<meta name="description" content="Dashboard Pareto breakdown alat berat — YTD / MTD / WTD, filter Blok HM, Site, Model, Cluster.">
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   ============================================================ */
+:root{
+  color-scheme: dark;
+  --page:#0f1419; --surface:#161c24; --surface-2:#1c242e; --surface-3:#232d39;
+  --border:rgba(255,255,255,.09); --border-strong:rgba(255,255,255,.16);
+  --ink:#e8edf3; --ink-2:#9aa7b5; --ink-3:#6b7987;
+  --grid:rgba(255,255,255,.07); --axis:rgba(255,255,255,.18);
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181;
+  --rest:#4a5866;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --crit:#d03b3b;
+  --ref:#fab219;              /* garis acuan 80% — dibaca di atas surface */
+  --accent:#3987e5;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  --r:10px;
+}
+:root[data-theme="light"]{
+  color-scheme: light;
+  --page:#f5f7fa; --surface:#ffffff; --surface-2:#f8fafc; --surface-3:#eef2f7;
+  --border:rgba(15,23,42,.10); --border-strong:rgba(15,23,42,.18);
+  --ink:#0f172a; --ink-2:#4a5567; --ink-3:#7c8798;
+  --grid:rgba(15,23,42,.07); --axis:rgba(15,23,42,.18);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4;
+  --rest:#b9c2cd;
+  --ref:#a86a00;              /* amber gelap: 4,6:1 di atas putih */
+  --accent:#2a78d6;
+  --shadow:0 1px 2px rgba(15,23,42,.06), 0 8px 24px -14px rgba(15,23,42,.25);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--page); color:var(--ink);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1500px;margin:0 auto;padding:0 16px 64px}
+
+/* ============================================================ HEADER */
+header{
+  position:sticky; top:0; z-index:40;
+  background:color-mix(in srgb, var(--page) 88%, transparent);
+  backdrop-filter:saturate(1.6) blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.hdr{max-width:1500px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:11px;min-width:0}
+.logo{
+  width:34px;height:34px;border-radius:8px;flex:none;
+  background:linear-gradient(140deg,var(--s1),#1d4f8f);
+  display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;letter-spacing:-.3px;
+}
+.brand h1{font-size:15px;font-weight:650;margin:0;letter-spacing:-.15px;white-space:nowrap}
+.brand p{font-size:11.5px;color:var(--ink-3);margin:1px 0 0;white-space:nowrap}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+.seg{display:flex;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:3px;gap:2px}
+.seg button{
+  font:inherit;font-size:12.5px;font-weight:600;letter-spacing:.2px;
+  border:0;background:transparent;color:var(--ink-2);
+  padding:6px 13px;border-radius:6px;cursor:pointer;transition:.13s;white-space:nowrap;
+}
+.seg button:hover{color:var(--ink);background:var(--surface-3)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#fff}
+
+.icon-btn{
+  width:34px;height:34px;display:grid;place-items:center;flex:none;
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  color:var(--ink-2);cursor:pointer;transition:.13s;
+}
+.icon-btn:hover{color:var(--ink);border-color:var(--border-strong);background:var(--surface-3)}
+.icon-btn svg{width:16px;height:16px}
+
+.stamp{font-size:11.5px;color:var(--ink-3);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
+.dot.stale{background:var(--warn)}
+.dot.err{background:var(--crit)}
+
+/* ============================================================ FILTERS */
+.filters{
+  display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;
+  padding:14px 16px;background:var(--surface);border:1px solid var(--border);
+  border-radius:var(--r);margin:16px 0;box-shadow:var(--shadow);
+}
+.f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.f[hidden]{display:none}
+.f label{font-size:10.5px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3)}
+.f select,.f input{
+  font:inherit;font-size:13px;color:var(--ink);
+  background:var(--surface-2);border:1px solid var(--border);border-radius:8px;
+  padding:7px 10px;min-width:132px;cursor:pointer;transition:.13s;
+}
+.f select:hover,.f input:hover{border-color:var(--border-strong)}
+.f select:focus,.f input:focus{outline:2px solid var(--accent);outline-offset:-1px;border-color:transparent}
+.f input[type=date]{cursor:text}
+.ghost{
+  font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);
+  background:transparent;border:1px solid var(--border);border-radius:8px;
+  padding:7px 13px;cursor:pointer;transition:.13s;
+}
+.ghost:hover{color:var(--ink);border-color:var(--border-strong);background:var(--surface-2)}
+.range-note{font-size:11.5px;color:var(--ink-3);margin-left:auto;align-self:center;text-align:right}
+
+/* ============================================================ CARDS */
+.grid-kpi{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px;margin-bottom:16px}
+.kpi{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px 16px 15px;box-shadow:var(--shadow);position:relative;overflow:hidden;
+}
+.kpi::before{content:"";position:absolute;inset:0 auto 0 0;width:3px;background:var(--bar,var(--s1))}
+.kpi .k-lab{font-size:10.5px;font-weight:650;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3)}
+.kpi .k-val{font-size:27px;font-weight:660;letter-spacing:-.9px;margin:6px 0 1px;line-height:1.1}
+.kpi .k-val small{font-size:14px;font-weight:550;color:var(--ink-2);letter-spacing:0;margin-left:3px}
+.kpi .k-sub{font-size:11.5px;color:var(--ink-3)}
+
+.card{
+  background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden;
+}
+.card-hd{
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:14px 16px;border-bottom:1px solid var(--border);
+}
+.card-hd h2{font-size:14px;font-weight:650;margin:0;letter-spacing:-.1px}
+.card-hd p{font-size:11.5px;color:var(--ink-3);margin:2px 0 0}
+.card-hd .sp{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.card-bd{padding:16px}
+
+.chip{
+  font-size:11.5px;font-weight:600;padding:4px 9px;border-radius:99px;
+  background:var(--surface-3);color:var(--ink-2);border:1px solid var(--border);
+}
+.chip.on{background:color-mix(in srgb,var(--accent) 18%,transparent);color:var(--accent);border-color:color-mix(in srgb,var(--accent) 40%,transparent)}
+
+/* ============================================================ CHART */
+.chart-scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+svg.chart{display:block}
+svg.chart text{font-family:inherit}
+.gridline{stroke:var(--grid);stroke-width:1}
+.axisline{stroke:var(--axis);stroke-width:1}
+.tick{fill:var(--ink-3);font-size:10.5px}
+.barlab{fill:var(--ink-2);font-size:10.5px;font-weight:600}
+.catlab{fill:var(--ink-2);font-size:10.5px}
+.bar{transition:opacity .12s}
+.bar:hover{opacity:.82;cursor:pointer}
+.cumline{fill:none;stroke:var(--ink-2);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.cumdot{fill:var(--surface);stroke:var(--ink-2);stroke-width:2}
+.ref80{stroke:var(--ref);stroke-width:1.5;stroke-dasharray:5 4}
+.ref80-lab{fill:var(--ref);font-size:10.5px;font-weight:650}
+
+.legend{display:flex;gap:16px;flex-wrap:wrap;padding:0 16px 14px;font-size:12px;color:var(--ink-2)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.legend .ln{display:inline-block;width:14px;height:2px;background:var(--ink-2);margin-right:6px;vertical-align:4px;border-radius:2px}
+
+#tip{
+  position:fixed;z-index:99;pointer-events:none;opacity:0;transition:opacity .1s;
+  background:var(--surface-3);border:1px solid var(--border-strong);border-radius:8px;
+  padding:9px 11px;font-size:12px;box-shadow:0 8px 28px rgba(0,0,0,.35);max-width:270px;
+}
+#tip .t-h{font-weight:650;margin-bottom:5px;line-height:1.3}
+#tip .t-r{display:flex;justify-content:space-between;gap:16px;color:var(--ink-2)}
+#tip .t-r b{color:var(--ink);font-weight:620;font-variant-numeric:tabular-nums}
+
+/* ============================================================ BLOK HM */
+.blok-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:12px}
+.blok{background:var(--surface-2);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.blok-hd{
+  display:flex;align-items:baseline;gap:8px;padding:10px 13px;
+  border-bottom:1px solid var(--border);background:var(--surface-3);
+}
+.blok-hd b{font-size:13px;font-weight:660;letter-spacing:-.1px}
+.blok-hd span{font-size:11px;color:var(--ink-3);margin-left:auto;font-variant-numeric:tabular-nums}
+.blok-sec{padding:9px 13px 11px}
+.blok-sec+.blok-sec{border-top:1px dashed var(--border)}
+.blok-sec h4{
+  font-size:10px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 7px;
+}
+.blok-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:2.5px 0;font-size:12px}
+.blok-row .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-2)}
+.blok-row .vl{font-variant-numeric:tabular-nums;font-weight:620;font-size:11.5px}
+.blok-bar{height:3px;border-radius:2px;background:var(--s1);margin-top:2px;min-width:2px}
+.blok-empty{font-size:11.5px;color:var(--ink-3);font-style:italic;padding:4px 0}
+
+/* ============================================================ TABLE */
+.tbl-scroll{overflow-x:auto;max-height:520px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{
+  position:sticky;top:0;z-index:1;text-align:left;
+  background:var(--surface-2);color:var(--ink-3);
+  font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;
+  padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+tbody td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--ink-2);white-space:nowrap}
+tbody tr:hover td{background:var(--surface-2)}
+td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+td.strong{color:var(--ink);font-weight:600}
+.rankpill{
+  display:inline-grid;place-items:center;width:20px;height:20px;border-radius:5px;
+  background:var(--surface-3);font-size:10.5px;font-weight:700;color:var(--ink-2);
+}
+.rankpill.top{background:color-mix(in srgb,var(--s1) 22%,transparent);color:var(--s1)}
+
+/* ============================================================ QUALITY */
+.q-grid{columns:220px;column-gap:12px}
+.q{
+  padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);
+  border-radius:9px;border-left:3px solid var(--ink-3);
+  break-inside:avoid;margin-bottom:12px;
+}
+.q.ok{border-left-color:var(--good)} .q.warn{border-left-color:var(--warn)} .q.bad{border-left-color:var(--crit)}
+.q .q-v{font-size:20px;font-weight:660;letter-spacing:-.5px}
+.q .q-l{font-size:11.5px;color:var(--ink-2);margin-top:2px}
+.q .q-d{font-size:11px;color:var(--ink-3);margin-top:5px;line-height:1.45}
+
+/* ============================================================ STATES */
+.state{padding:56px 24px;text-align:center;color:var(--ink-3)}
+.state h3{color:var(--ink);font-size:15px;margin:0 0 6px;font-weight:620}
+.state p{margin:0 auto;max-width:520px;font-size:13px;line-height:1.6}
+.state code{
+  background:var(--surface-3);padding:2px 6px;border-radius:4px;
+  font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink-2);
+}
+.spinner{
+  width:26px;height:26px;border:2.5px solid var(--border-strong);border-top-color:var(--accent);
+  border-radius:50%;animation:spin .7s linear infinite;margin:0 auto 14px;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.bar-progress{height:3px;background:var(--surface-3);border-radius:2px;overflow:hidden;max-width:260px;margin:14px auto 0}
+.bar-progress i{display:block;height:100%;background:var(--accent);width:35%;animation:slide 1.3s ease-in-out infinite}
+@keyframes slide{0%{margin-left:-35%}100%{margin-left:100%}}
+
+footer{text-align:center;padding:26px 16px;color:var(--ink-3);font-size:11.5px;line-height:1.7}
+footer a{color:var(--ink-2)}
+
+@media (max-width:640px){
+  .wrap{padding:0 12px 48px}
+  .hdr{padding:10px 12px;gap:10px}
+  .brand h1{font-size:14px}
+  .kpi .k-val{font-size:23px}
+  .f select,.f input{min-width:118px}
+  .range-note{width:100%;text-align:left;margin-left:0}
+}
+@media print{
+  header{position:static} .filters,.icon-btn,.seg{display:none}
+  body{background:#fff}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr">
+    <div class="brand">
+      <div class="logo" id="logoMark">PB</div>
+      <div>
+        <h1 id="ttl">Pareto Breakdown</h1>
+        <p id="sub">PT Bina Sarana Sukses</p>
+      </div>
+    </div>
+    <div class="hdr-right">
+      <div class="seg" role="group" aria-label="Periode">
+        <button data-p="YTD" aria-pressed="true">YTD</button>
+        <button data-p="MTD" aria-pressed="false">MTD</button>
+        <button data-p="WTD" aria-pressed="false">WTD</button>
+        <button data-p="CUSTOM" aria-pressed="false">Custom</button>
+      </div>
+      <div class="stamp"><span class="dot" id="statusDot"></span><span id="statusTxt">memuat…</span></div>
+      <button class="icon-btn" id="btnReload" title="Muat ulang data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></svg>
+      </button>
+      <button class="icon-btn" id="btnTheme" title="Ganti tema">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="filters" id="filterBar" hidden>
+    <div class="f"><label for="fSite">Site</label><select id="fSite"></select></div>
+    <div class="f"><label for="fModel">Model Unit</label><select id="fModel"></select></div>
+    <div class="f"><label for="fBlok">Blok HM</label><select id="fBlok"></select></div>
+    <div class="f"><label for="fCluster">Cluster</label><select id="fCluster"></select></div>
+    <div class="f" id="wrapFrom" hidden><label for="fFrom">Dari</label><input type="date" id="fFrom"></div>
+    <div class="f" id="wrapTo" hidden><label for="fTo">Sampai</label><input type="date" id="fTo"></div>
+    <button class="ghost" id="btnReset">Reset</button>
+    <label class="ghost" style="display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none" title="Menyatukan ejaan berbeda untuk komponen yang sama (ENGINE/Engine, ELECTRICAL/ELECTRICAL SYSTEM, dsb).">
+      <input type="checkbox" id="fCanon" checked style="accent-color:var(--accent);width:14px;height:14px;cursor:pointer">
+      <span>Satukan ejaan komponen</span>
+    </label>
+    <div class="range-note" id="rangeNote"></div>
+  </div>
+
+  <div id="loadState" class="card"><div class="state">
+    <div class="spinner"></div>
+    <h3>Memuat data dari Google Sheets</h3>
+    <p>Menarik sheet <code>Rekap All ( formula )</code>. Pemuatan pertama bisa beberapa detik karena datanya puluhan ribu baris.</p>
+    <p id="loadHint" style="margin-top:8px;font-size:12px;color:var(--ink-3)"></p>
+    <div class="bar-progress"><i></i></div>
+  </div></div>
+
+  <div id="errState" class="card" hidden><div class="state">
+    <h3 id="errTtl">Data tidak bisa dimuat</h3>
+    <p id="errMsg"></p>
+  </div></div>
+
+  <div id="setupState" class="card" hidden><div class="state">
+    <h3>Hubungkan ke spreadsheet</h3>
+    <p style="margin-bottom:16px">Tempel link Google Sheets sumber data. Link disimpan di browser ini saja &mdash; tidak dikirim ke mana pun dan tidak ikut ter-publish di halaman.</p>
+    <div style="display:flex;gap:8px;max-width:560px;margin:0 auto;flex-wrap:wrap;justify-content:center">
+      <input type="url" id="setupUrl" placeholder="https://docs.google.com/spreadsheets/d/…/edit?gid=…"
+             style="font:inherit;font-size:13px;flex:1;min-width:280px;padding:9px 11px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink)">
+      <button class="ghost" id="setupGo" style="background:var(--accent);color:#fff;border-color:transparent;font-weight:650">Hubungkan</button>
+    </div>
+    <p id="setupErr" style="color:var(--crit);margin-top:12px;font-size:12.5px" hidden></p>
+    <p style="margin-top:18px;font-size:12px;color:var(--ink-3)">Buka spreadsheet &rarr; klik tab <code>Rekap All ( formula )</code> &rarr; salin seluruh URL dari address bar.</p>
+  </div></div>
+
+  <main id="app" hidden>
+
+    <div class="grid-kpi" id="kpis"></div>
+
+    <section class="card">
+      <div class="card-hd">
+        <div>
+          <h2 id="pTitle">Pareto — Major Component</h2>
+          <p id="pSubtitle"></p>
+        </div>
+        <div class="sp">
+          <div class="seg" role="group" aria-label="Metrik">
+            <button data-m="freq" aria-pressed="true">Frekuensi</button>
+            <button data-m="dur" aria-pressed="false">Durasi</button>
+          </div>
+          <div class="seg" role="group" aria-label="Jumlah kategori">
+            <button data-n="10" aria-pressed="true">Top 10</button>
+            <button data-n="15" aria-pressed="false">15</button>
+            <button data-n="99" aria-pressed="false">Semua</button>
+          </div>
+        </div>
+      </div>
+      <div class="chart-scroll"><div id="paretoMajor"></div></div>
+      <div class="legend">
+        <span><i style="background:var(--s1)"></i>Vital few (kumulatif ≤ 80%)</span>
+        <span><i style="background:var(--rest)"></i>Trivial many</span>
+        <span><span class="ln"></span>% kumulatif</span>
+        <span style="color:var(--ref)"><span class="ln" style="background:var(--ref)"></span>Garis 80%</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd">
+        <div>
+          <h2>Drill-down — Sub-Component</h2>
+          <p id="dSubtitle">Klik salah satu batang di atas untuk menyaring.</p>
+        </div>
+        <div class="sp"><button class="ghost" id="btnClearDrill" hidden>Tampilkan semua</button></div>
+      </div>
+      <div class="chart-scroll"><div id="paretoSub"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd">
+        <div>
+          <h2>Matriks Blok HM</h2>
+          <p>Top 5 per blok hour meter — frekuensi dan durasi berdampingan.</p>
+        </div>
+        <div class="sp">
+          <div class="seg" role="group" aria-label="Dimensi blok">
+            <button data-b="sub" aria-pressed="true">Sub-Component</button>
+            <button data-b="major" aria-pressed="false">Major</button>
+          </div>
+        </div>
+      </div>
+      <div class="card-bd"><div class="blok-grid" id="blokGrid"></div></div>
+    </section>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px">
+      <section class="card" style="margin:0">
+        <div class="card-hd"><div><h2>Top 15 Unit Bermasalah</h2><p>Diurutkan sesuai metrik aktif.</p></div></div>
+        <div class="tbl-scroll"><table id="tblUnit"></table></div>
+      </section>
+      <section class="card" style="margin:0">
+        <div class="card-hd"><div><h2>Tren Bulanan</h2><p>Frekuensi &amp; total durasi per bulan.</p></div></div>
+        <div class="chart-scroll"><div id="trend"></div></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-hd">
+        <div><h2>Kualitas Data</h2><p>Dihitung ulang dari kolom tanggal &amp; jam — bukan dari kolom DURATION.</p></div>
+      </div>
+      <div class="card-bd"><div class="q-grid" id="quality"></div></div>
+    </section>
+
+    <section class="card">
+      <div class="card-hd">
+        <div><h2>Detail Breakdown</h2><p id="detCount"></p></div>
+        <div class="sp">
+          <input type="search" id="fSearch" placeholder="Cari unit / komponen / damage…"
+                 style="font:inherit;font-size:13px;padding:7px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface-2);color:var(--ink);min-width:210px">
+          <button class="ghost" id="btnCsv">Unduh CSV</button>
+        </div>
+      </div>
+      <div class="tbl-scroll"><table id="tblDetail"></table></div>
+    </section>
+
+  </main>
+
+  <footer>
+    <div id="ftr"></div>
+    <div style="margin-top:6px">Sumber: Google Sheets <em>2026 PARETO BSS PROJECT</em> — sheet <em>Rekap All ( formula )</em>. Durasi dihitung dari selisih waktu breakdown ke SPK close.</div>
+  </footer>
+</div>
+
+<div id="tip"></div>
+
+<script>
+"use strict";
+/* ==================================================================
+   KONFIGURASI  —  ubah bagian ini kalau sumber data pindah
+   ================================================================== */
+const CONFIG = {
+  /* ------------------------------------------------------------------
+     SUMBER DATA — dua mode, pilih salah satu.
+
+     MODE A (aktif sekarang) — ID ditulis langsung di bawah.
+       Halaman langsung jalan begitu dibuka. Tapi ID ini ikut terbaca
+       siapa pun yang membuka source code halaman atau file ini di
+       GitHub. Kalau izin sheet = "anyone with the link · Editor",
+       artinya mereka juga bisa mengubah isinya.
+
+     MODE B — kosongkan SHEET_ID jadi "" (string kosong).
+       Halaman akan minta link spreadsheet sekali di awal, lalu
+       menyimpannya di browser masing-masing orang. Link-nya TIDAK
+       ikut ter-publish — PE bagikan sendiri ke tim lewat WA/email.
+       Izin sheet tidak perlu diubah sama sekali.
+
+     Untuk pindah ke Mode B: ganti baris SHEET_ID jadi   SHEET_ID: "",
+     ------------------------------------------------------------------ */
+  SHEET_ID : "1SgiTv06l6ScZ7jtniS_H3FVQfXxYx21Ys-to0SC9F2Y",
+  GID      : "1443801522",              // sheet "Rekap All ( formula )"
+  COMPANY  : "PT Bina Sarana Sukses",
+  TITLE    : "Pareto Breakdown",
+  MARK     : "BSS",
+  // kolom yang ditarik (huruf kolom di sheet)
+  COLS     : "A,D,E,I,J,K,M,O,Q,T,U,Y,AA,AB",
+  MAX_DAYS : 180,                        // durasi > ini dianggap anomali
+};
+
+/* ------------------------------------------------------------------
+   NORMALISASI NAMA MAJOR COMPONENT
+   Di sheet, satu komponen ditulis dengan banyak ejaan berbeda
+   (ENGINE / Engine, ELECTRICAL / ELECTRICAL SYSTEM, OPTIONAL ACC /
+   OPTIONAL ACCESSORIES / OPTIONAL ACESSORIES, dst). Kalau tidak
+   disatukan, satu komponen pecah jadi beberapa batang Pareto dan
+   ranking prioritasnya jadi salah.
+   Tambahkan ejaan baru di sini kalau muncul di kemudian hari.
+   ------------------------------------------------------------------ */
+const ALIAS = {
+  "OPTIONAL ACC":"OPTIONAL ACCESSORIES",
+  "OPTIONAL ACESSORIES":"OPTIONAL ACCESSORIES",
+  "OPTIONAL ACCESORIES":"OPTIONAL ACCESSORIES",
+  "VITA G2":"VITA", "VITA G3":"VITA", "VITA ARDUINO":"VITA",
+  "KALIBRASI PPU SPK":"(TIDAK DIISI)",
+};
+const KEEP_SYSTEM = new Set(["AIR SYSTEM"]);   // jangan dibuang kata "SYSTEM"-nya
+const BLANKS = new Set(["","-","0","N/A","#N/A","NA","NULL"]);
+
+/* teks umum: rapikan spasi & huruf besar, tanpa mengubah makna */
+function normText(s){
+  const t=String(s==null?"":s).replace(/\s+/g," ").trim().toUpperCase();
+  return BLANKS.has(t) ? "(TIDAK DIISI)" : t;
+}
+/* major component: normText + samakan varian ejaan */
+function canonMajor(s){
+  let t=normText(s);
+  if(t==="(TIDAK DIISI)") return t;
+  t=t.replace(/\s*\/\s*/g," & ").replace(/\s+AND\s+/g," & ").replace(/\s+/g," ").trim();
+  t=t.replace(/ACESSORIES/g,"ACCESSORIES").replace(/PATRS/g,"PARTS");
+  if(ALIAS[t]) t=ALIAS[t];
+  if(!KEEP_SYSTEM.has(t)) t=t.replace(/\s+SYSTEM$/,"");
+  if(ALIAS[t]) t=ALIAS[t];
+  return t;
+}
+
+/* ==================================================================
+   UTIL
+   ================================================================== */
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const nfInt = new Intl.NumberFormat("id-ID");
+const fmtI  = n => nfInt.format(Math.round(n||0));
+const fmtH  = n => nfInt.format(Math.round(n||0));
+const fmt1  = n => new Intl.NumberFormat("id-ID",{minimumFractionDigits:1,maximumFractionDigits:1}).format(n||0);
+const esc   = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+
+/* CSV parser (RFC4180) */
+function parseCSV(text){
+  const rows=[]; let row=[], field="", q=false, i=0;
+  if(text.charCodeAt(0)===0xFEFF) i=1;
+  for(; i<text.length; i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else q=false; }
+      else field+=c;
+    }else{
+      if(c==='"') q=true;
+      else if(c===','){ row.push(field); field=""; }
+      else if(c==='\n'){ row.push(field); rows.push(row); row=[]; field=""; }
+      else if(c==='\r'){ /* skip */ }
+      else field+=c;
+    }
+  }
+  if(field.length||row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+/* "01/01/2026" -> {y,m,d} | null.  Tolak tahun di luar 1990–2100. */
+function parseDMY(s){
+  if(!s) return null;
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{1,5})$/.exec(s.trim());
+  if(!m) return null;
+  const d=+m[1], mo=+m[2], y=+m[3];
+  if(y<1990||y>2100||mo<1||mo>12||d<1||d>31) return null;
+  return {y, m:mo, d};
+}
+/* "13:40:00" / "3:39" -> jam desimal | null. Menerima jam > 24. */
+function parseHMS(s){
+  if(!s) return null;
+  const m = /^(\d{1,4}):(\d{1,2})(?::(\d{1,2}))?$/.exec(s.trim());
+  if(!m) return null;
+  return (+m[1]) + (+m[2])/60 + ((+m[3]||0))/3600;
+}
+/* "9.054" -> 9054 ; "854" -> 854 */
+function parseIDNum(s){
+  if(s==null||s==="") return null;
+  const t=String(s).trim().replace(/\./g,"").replace(/,/g,".");
+  const v=parseFloat(t);
+  return isFinite(v)?v:null;
+}
+function toUTC(dt,hours){
+  return Date.UTC(dt.y, dt.m-1, dt.d) + Math.round((hours||0)*3600000);
+}
+function blokLabel(v){
+  if(v==null) return "Tidak diketahui";
+  const hi=v/1000, lo=Math.max(0,hi-5);
+  return `${lo}K – ${hi}K`;
+}
+
+/* ==================================================================
+   STATE
+   ================================================================== */
+const S = {
+  rows:[], quality:null, lastDate:null, loadedAt:null,
+  period:"YTD", from:null, to:null, via:"",
+  site:"", model:"", blok:"", cluster:"",
+  metric:"freq", topN:10, drill:null, search:"",
+  canon:true, blokDim:"sub",
+};
+
+/* ==================================================================
+   FETCH
+   ================================================================== */
+/* --- sumber data: dari CONFIG, atau dari yang disimpan di browser --- */
+const SRC = { id:"", gid:"" };
+function loadSource(){
+  if(CONFIG.SHEET_ID){ SRC.id=CONFIG.SHEET_ID; SRC.gid=CONFIG.GID; return true; }
+  try{
+    const s=JSON.parse(localStorage.getItem("pareto-src")||"null");
+    if(s&&s.id){ SRC.id=s.id; SRC.gid=s.gid||CONFIG.GID; return true; }
+  }catch(e){}
+  return false;
+}
+function saveSource(id,gid){
+  SRC.id=id; SRC.gid=gid||CONFIG.GID;
+  try{ localStorage.setItem("pareto-src",JSON.stringify({id:SRC.id,gid:SRC.gid})); }catch(e){}
+}
+function parseSheetUrl(u){
+  const id=/\/spreadsheets\/d\/([a-zA-Z0-9-_]{20,})/.exec(u||"");
+  if(!id) return null;
+  const gid=/[#&?]gid=(\d+)/.exec(u||"");
+  return { id:id[1], gid: gid?gid[1]:CONFIG.GID };
+}
+function showSetup(msg){
+  $("#loadState").hidden=true; $("#app").hidden=true; $("#errState").hidden=true; $("#filterBar").hidden=true;
+  $("#setupState").hidden=false;
+  const e=$("#setupErr"); e.hidden=!msg; if(msg) e.textContent=msg;
+  setStatus("belum terhubung","stale");
+}
+
+const TQ = () => `select ${CONFIG.COLS} where D is not null`;
+
+function gvizURL(mode,handler){
+  const out = mode==="json" ? `out:json;responseHandler:${handler}` : "out:csv";
+  return `https://docs.google.com/spreadsheets/d/${SRC.id}/gviz/tq`
+       + `?tqx=${encodeURIComponent(out)}&gid=${encodeURIComponent(SRC.gid)}`
+       + `&tq=${encodeURIComponent(TQ())}&_=${Date.now()}`;
+}
+
+/* ---- Jalur 1: fetch CSV. Cepat & ringan, tapi butuh CORS —
+        tidak jalan kalau halaman dibuka sebagai file:// di Chrome. ---- */
+async function viaFetch(){
+  const res = await fetch(gvizURL("csv"), {cache:"no-store"});
+  if(!res.ok) throw new Error("HTTP "+res.status);
+  const text = await res.text();
+  if(/^\s*</.test(text)) throw new Error("bukan CSV (kemungkinan halaman login)");
+  const rows = parseCSV(text);
+  if(rows.length<2) throw new Error("CSV kosong");
+  return rows;
+}
+
+/* ---- Jalur 2: <script> JSONP. Tidak terpengaruh CORS sama sekali,
+        jadi jalan dari file:// maupun dari GitHub Pages.
+        Tanggal & jam datang sudah terformat, jadi bentuknya sama
+        persis dengan hasil CSV dan bisa dipakai parser yang sama. ---- */
+function viaJSONP(){
+  return new Promise((resolve,reject)=>{
+    const cb = "__pareto_cb_" + Math.random().toString(36).slice(2,9);
+    const s = document.createElement("script");
+    let done=false;
+    const cleanup=()=>{ try{delete window[cb];}catch(e){window[cb]=undefined;} s.remove(); };
+    const timer = setTimeout(()=>{ if(!done){done=true;cleanup();reject(new Error("timeout 90 detik"));} }, 90000);
+
+    window[cb] = (resp)=>{
+      if(done) return; done=true; clearTimeout(timer); cleanup();
+      try{
+        if(!resp || resp.status==="error"){
+          const e=(resp&&resp.errors&&resp.errors[0])||{};
+          return reject(new Error(e.detailed_message || e.message || "Google menolak query"));
+        }
+        const t=resp.table;
+        if(!t || !t.cols) return reject(new Error("respons tanpa tabel"));
+        const cell=c => c==null ? "" : (c.f!=null ? String(c.f) : (c.v==null ? "" : String(c.v)));
+        const rows=[ t.cols.map(c=>c.label||c.id||"") ];
+        (t.rows||[]).forEach(r=> rows.push((r.c||[]).map(cell)));
+        if(rows.length<2) return reject(new Error("tidak ada baris data"));
+        resolve(rows);
+      }catch(err){ reject(err); }
+    };
+
+    s.src = gvizURL("json", cb);
+    s.onerror = ()=>{ if(!done){done=true;clearTimeout(timer);cleanup();reject(new Error("script gagal dimuat"));} };
+    document.head.appendChild(s);
+  });
+}
+
+async function loadData(){
+  if(!SRC.id && !loadSource()) return showSetup();
+  $("#setupState").hidden=true;
+  $("#loadState").hidden=false; $("#errState").hidden=true; $("#app").hidden=true; $("#filterBar").hidden=true;
+  setStatus("memuat…","");
+
+  let rows=null; const tried=[];
+  try{ rows = await viaFetch(); S.via="CSV"; }
+  catch(e1){
+    tried.push("fetch CSV: "+e1.message);
+    $("#loadHint").textContent = "Mode langsung ditolak browser — mencoba jalur cadangan…";
+    try{ rows = await viaJSONP(); S.via="JSONP"; }
+    catch(e2){
+      tried.push("JSONP: "+e2.message);
+      return fail("Data tidak bisa dimuat",
+        `Dua jalur pengambilan data sama-sama gagal:<div style="margin:10px auto;max-width:460px;text-align:left;font-size:12.5px;line-height:1.7;color:var(--ink-3)">`
+        + tried.map(t=>"• <code>"+esc(t)+"</code>").join("<br>")
+        + `</div>Cek: link spreadsheet benar, sheet <code>Rekap All ( formula )</code> masih ada, dan perangkat ini punya koneksi internet.`);
+    }
+  }
+  normalize(rows);
+  if(!S.rows.length) return fail("Tidak ada baris valid","Semua baris gagal diparse. Cek apakah GID sheet sudah benar.");
+  buildFilters(); $("#filterBar").hidden=false; $("#loadState").hidden=true; $("#app").hidden=false;
+  S.loadedAt=new Date();
+  setStatus(`${fmtI(S.rows.length)} baris`, "");
+  $("#loadHint").textContent="";
+  render();
+}
+function fail(t,m){
+  $("#loadState").hidden=true; $("#app").hidden=true; $("#setupState").hidden=true;
+  $("#errState").hidden=false; $("#errTtl").textContent=t;
+  $("#errMsg").innerHTML = m + (CONFIG.SHEET_ID ? "" :
+    ` <button class="ghost" id="errChange" style="margin-top:12px">Ganti link spreadsheet</button>`);
+  const b=$("#errChange"); if(b) b.addEventListener("click",()=>{
+    try{localStorage.removeItem("pareto-src");}catch(e){}
+    SRC.id=""; showSetup();
+  });
+  setStatus("gagal","err");
+}
+function setStatus(t,cls){
+  $("#statusTxt").textContent=t;
+  $("#statusDot").className="dot"+(cls?" "+cls:"");
+}
+
+/* ==================================================================
+   NORMALISASI + KUALITAS DATA
+   ================================================================== */
+function normalize(raw){
+  const out=[];
+  const q={total:0, badDate:0, noClose:0, negative:0, extreme:0, wrapped:0, noSite:0, noComp:0,
+           sumSheet:0, sumCalc:0, cmp:0, merged:0, rawNames:new Set(), canonNames:new Set(), variants:new Map()};
+  for(let i=1;i<raw.length;i++){
+    const r=raw[i];
+    if(!r || r.length<14) continue;
+    const [id,dBD,tBD,dCL,tCL,durSheet,major,sub,damage,cluster,model,site,hm,blok]=r.map(x=>(x||"").trim());
+    const bd=parseDMY(dBD); if(!bd) continue;
+    q.total++;
+
+    const cl=parseDMY(dCL);
+    const hBD=parseHMS(tBD), hCL=parseHMS(tCL);
+    const start=toUTC(bd,hBD||0);
+    let dur=null, flag=null;
+
+    if(!cl){ if(dCL){q.badDate++; flag="badDate";} else {q.noClose++; flag="noClose";} }
+    else{
+      const end=toUTC(cl,hCL||0);
+      const h=(end-start)/3600000;
+      if(h<0){ q.negative++; flag="negative"; }
+      else if(h> CONFIG.MAX_DAYS*24){ q.extreme++; flag="extreme"; }
+      else dur=h;
+    }
+
+    const ds=parseHMS(durSheet);
+    if(dur!=null && ds!=null){
+      q.cmp++; q.sumCalc+=dur; q.sumSheet+=ds;
+      if(dur-ds > 23.5) q.wrapped++;
+    }
+    if(!site) q.noSite++;
+    if(!major) q.noComp++;
+
+    // --- normalisasi nama komponen ---
+    const rawMajor = normText(major);
+    const canMajor = canonMajor(major);
+    q.rawNames.add(rawMajor); q.canonNames.add(canMajor);
+    if(rawMajor!==canMajor){
+      q.merged++;
+      let set=q.variants.get(canMajor); if(!set){set=new Set();q.variants.set(canMajor,set);}
+      set.add(rawMajor);
+    }
+
+    out.push({
+      id: normText(id)==="(TIDAK DIISI)" ? "(TANPA ID)" : normText(id),
+      t: start,
+      y: bd.y, mo: bd.m-1, d: bd.d,
+      dur, durSheet: ds, flag,
+      majorRaw: rawMajor,
+      majorCanon: canMajor,
+      sub:   normText(sub).replace(/PATRS/g,"PARTS"),
+      damage:normText(damage),
+      cluster:normText(cluster),
+      model: normText(model),
+      site:  normText(site),
+      hm: parseIDNum(hm),
+      blok: parseIDNum(blok),
+    });
+  }
+  out.sort((a,b)=>a.t-b.t);
+  S.rows=out; S.quality=q;
+  S.lastDate = out.length ? new Date(out[out.length-1].t) : null;
+  applyCanon();
+}
+/* pilih nama komponen yang dipakai seluruh dashboard */
+function applyCanon(){
+  for(const r of S.rows) r.major = S.canon ? r.majorCanon : r.majorRaw;
+}
+
+/* ==================================================================
+   FILTER
+   ================================================================== */
+function periodRange(){
+  const ref = S.lastDate ? new Date(S.lastDate) : new Date();
+  const now = new Date();
+  const base = (ref>now?now:ref);
+  const Y=base.getUTCFullYear(), M=base.getUTCMonth(), D=base.getUTCDate();
+  const endOfDay = Date.UTC(Y,M,D,23,59,59,999);
+  if(S.period==="YTD") return [Date.UTC(Y,0,1), endOfDay];
+  if(S.period==="MTD") return [Date.UTC(Y,M,1), endOfDay];
+  if(S.period==="WTD"){
+    const dow=new Date(Date.UTC(Y,M,D)).getUTCDay();      // 0=Min
+    const back=(dow===0?6:dow-1);                          // mulai Senin
+    return [Date.UTC(Y,M,D-back), endOfDay];
+  }
+  const f = S.from ? Date.parse(S.from+"T00:00:00Z") : Date.UTC(Y,0,1);
+  const t = S.to   ? Date.parse(S.to  +"T23:59:59Z") : endOfDay;
+  return [f,t];
+}
+function filtered(){
+  const [a,b]=periodRange();
+  return S.rows.filter(r=>
+    r.t>=a && r.t<=b &&
+    (!S.site   || r.site===S.site) &&
+    (!S.model  || r.model===S.model) &&
+    (!S.cluster|| r.cluster===S.cluster) &&
+    (!S.blok   || String(r.blok)===S.blok)
+  );
+}
+function uniq(arr,k){
+  return Array.from(new Set(arr.map(r=>r[k]).filter(v=>v!=null&&v!=="" ))).sort((x,y)=>
+    typeof x==="number"? x-y : String(x).localeCompare(String(y),"id"));
+}
+function buildFilters(){
+  fill("#fSite","Semua site", uniq(S.rows,"site"));
+  fill("#fModel","Semua model", uniq(S.rows,"model"));
+  fill("#fCluster","Semua cluster", uniq(S.rows,"cluster"));
+  const bl=uniq(S.rows,"blok");
+  const sel=$("#fBlok"); sel.innerHTML='<option value="">Semua blok</option>';
+  bl.forEach(v=>{const o=document.createElement("option");o.value=String(v);o.textContent=blokLabel(v);sel.appendChild(o);});
+}
+function restoreFilters(){
+  const set=(sel,v)=>{const el=$(sel); if(Array.from(el.options).some(o=>o.value===v)) el.value=v; else {el.value="";}};
+  set("#fSite",S.site); set("#fModel",S.model); set("#fBlok",S.blok); set("#fCluster",S.cluster);
+  S.site=$("#fSite").value; S.model=$("#fModel").value; S.blok=$("#fBlok").value; S.cluster=$("#fCluster").value;
+}
+function fill(sel,all,vals){
+  const el=$(sel); el.innerHTML="";
+  const o0=document.createElement("option"); o0.value=""; o0.textContent=all; el.appendChild(o0);
+  vals.forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;el.appendChild(o);});
+}
+
+/* ==================================================================
+   AGREGASI
+   ================================================================== */
+function agg(rows,key){
+  const m=new Map();
+  for(const r of rows){
+    const k=r[key];
+    let a=m.get(k); if(!a){a={k,freq:0,dur:0,units:new Set()};m.set(k,a);}
+    a.freq++; if(r.dur!=null) a.dur+=r.dur; a.units.add(r.id);
+  }
+  return Array.from(m.values());
+}
+function pareto(rows,key,metric,topN){
+  const list=agg(rows,key).sort((a,b)=>b[metric]-a[metric]||b.freq-a.freq);
+  const total=list.reduce((s,x)=>s+x[metric],0);
+  let run=0;
+  const full=list.map(x=>{run+=x[metric];return{...x,cum:total?run/total*100:0};});
+  let head=full, tail=null;
+  if(topN<full.length){
+    head=full.slice(0,topN);
+    const rest=full.slice(topN);
+    if(rest.length) tail={k:`Lainnya (${rest.length})`,freq:rest.reduce((s,x)=>s+x.freq,0),
+                          dur:rest.reduce((s,x)=>s+x.dur,0),units:new Set(),cum:100,isTail:true};
+  }
+  return {rows:head, tail, total, all:full};
+}
+
+/* ==================================================================
+   CHART: PARETO
+   ================================================================== */
+function drawPareto(mount, data, metric, opts={}){
+  const el=$(mount); el.innerHTML="";
+  const items = data.tail ? data.rows.concat([data.tail]) : data.rows.slice();
+  if(!items.length){ el.innerHTML='<div class="state"><p>Tidak ada data pada filter ini.</p></div>'; return; }
+
+  const BW=Math.max(54, Math.min(96, Math.floor(900/items.length)));
+  const ML=58, MR=48, MT=26, MB=76, PH=opts.h||268;
+  const W=Math.max(el.parentElement.clientWidth-2, ML+MR+items.length*BW);
+  const PW=W-ML-MR;
+  const step=PW/items.length;
+  const max=Math.max(...items.map(d=>d[metric]))||1;
+  const nice=niceMax(max);
+  const y=v=>MT+PH-(v/nice)*PH;
+  const yc=p=>MT+PH-(p/100)*PH;
+
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("class","chart");
+  svg.setAttribute("width",W); svg.setAttribute("height",MT+PH+MB);
+  svg.setAttribute("viewBox",`0 0 ${W} ${MT+PH+MB}`);
+
+  const add=(t,a,txt)=>{const n=document.createElementNS(NS,t);
+    for(const k in a) n.setAttribute(k,a[k]); if(txt!=null) n.textContent=txt; svg.appendChild(n); return n;};
+
+  // grid + sumbu kiri
+  for(let i=0;i<=4;i++){
+    const v=nice*i/4, yy=y(v);
+    add("line",{x1:ML,x2:ML+PW,y1:yy,y2:yy,class:"gridline"});
+    add("text",{x:ML-8,y:yy+3.5,class:"tick","text-anchor":"end"}, fmtI(v));
+  }
+  // sumbu kanan %
+  for(let i=0;i<=4;i++){
+    const p=i*25, yy=yc(p);
+    add("text",{x:ML+PW+8,y:yy+3.5,class:"tick","text-anchor":"start"}, p+"%");
+  }
+  add("line",{x1:ML,x2:ML+PW,y1:MT+PH,y2:MT+PH,class:"axisline"});
+
+  // garis 80%
+  const y80=yc(80);
+  add("line",{x1:ML,x2:ML+PW,y1:y80,y2:y80,class:"ref80"});
+  add("text",{x:ML+PW-4,y:y80-6,class:"ref80-lab","text-anchor":"end"},"80%");
+
+  // bars
+  const bw=Math.min(step*0.62,54);
+  items.forEach((d,i)=>{
+    const cx=ML+step*i+step/2;
+    const v=d[metric], h=Math.max(1,(v/nice)*PH);
+    const vital = d.cum<=80.0001 && !d.isTail;
+    const g=document.createElementNS(NS,"g"); svg.appendChild(g);
+    const rect=document.createElementNS(NS,"rect");
+    rect.setAttribute("x",cx-bw/2); rect.setAttribute("y",MT+PH-h);
+    rect.setAttribute("width",bw); rect.setAttribute("height",h);
+    rect.setAttribute("rx",4);
+    rect.setAttribute("fill", d.isTail? "var(--rest)" : (vital? "var(--s1)":"var(--rest)"));
+    rect.setAttribute("class","bar");
+    g.appendChild(rect);
+
+    // label nilai
+    const lab=document.createElementNS(NS,"text");
+    lab.setAttribute("x",cx); lab.setAttribute("y",MT+PH-h-6);
+    lab.setAttribute("class","barlab"); lab.setAttribute("text-anchor","middle");
+    lab.textContent = metric==="dur" ? fmtH(v) : fmtI(v);
+    svg.appendChild(lab);
+
+    // label kategori (2 baris)
+    wrapLabel(svg,NS,String(d.k),cx,MT+PH+15,Math.max(step-14,46));
+
+    // interaksi
+    const hit=document.createElementNS(NS,"rect");
+    hit.setAttribute("x",ML+step*i); hit.setAttribute("y",MT);
+    hit.setAttribute("width",step); hit.setAttribute("height",PH);
+    hit.setAttribute("fill","transparent");
+    hit.style.cursor = opts.onPick && !d.isTail ? "pointer":"default";
+    hit.addEventListener("mousemove",e=>showTip(e,d,metric));
+    hit.addEventListener("mouseleave",hideTip);
+    if(opts.onPick && !d.isTail) hit.addEventListener("click",()=>opts.onPick(d.k));
+    svg.appendChild(hit);
+  });
+
+  // kurva kumulatif — skala terkunci: 100% = total metrik, jadi titik terakhir selalu di puncak
+  let pts=[];
+  items.forEach((d,i)=>pts.push([ML+step*i+step/2, yc(d.cum)]));
+  const path=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+" "+p[1].toFixed(1)).join(" ");
+  add("path",{d:path,class:"cumline"});
+  pts.forEach(p=>add("circle",{cx:p[0],cy:p[1],r:3.5,class:"cumdot"}));
+
+  el.appendChild(svg);
+}
+function wrapLabel(svg,NS,txt,cx,y0,maxw){
+  const per=Math.max(7,Math.floor(maxw/5.95));
+  const words=txt.split(/[\s\/]+/); const lines=[]; let cur=""; let used=0;
+  for(const w of words){
+    if((cur+" "+w).trim().length<=per){ cur=(cur+" "+w).trim(); used++; }
+    else { if(cur) lines.push(cur); cur=w.length>per? w.slice(0,per-1)+"…" : w; used++; }
+    if(lines.length>=2) break;
+  }
+  if(cur&&lines.length<2) lines.push(cur);
+  if(!lines.length) lines.push(txt.slice(0,per));
+  if(used<words.length && lines.length===2 && !/…$/.test(lines[1])){
+    lines[1] = lines[1].length>=per ? lines[1].slice(0,per-1)+"…" : lines[1]+"…";
+  }
+  lines.slice(0,2).forEach((ln,i)=>{
+    const t=document.createElementNS(NS,"text");
+    t.setAttribute("x",cx); t.setAttribute("y",y0+i*12);
+    t.setAttribute("class","catlab"); t.setAttribute("text-anchor","middle");
+    t.textContent=ln; svg.appendChild(t);
+  });
+}
+function showTip(e,d,metric){
+  const t=$("#tip");
+  const nUnit = d.units && d.units.size ? `<div class="t-r"><span>Unit terdampak</span><b>${fmtI(d.units.size)}</b></div>`:"";
+  t.innerHTML = `<div class="t-h">${esc(d.k)}</div>`
+    + `<div class="t-r"><span>Frekuensi</span><b>${fmtI(d.freq)}×</b></div>`
+    + `<div class="t-r"><span>Total durasi</span><b>${fmtH(d.dur)} jam</b></div>`
+    + `<div class="t-r"><span>MTTR</span><b>${fmt1(d.freq?d.dur/d.freq:0)} jam</b></div>`
+    + nUnit
+    + `<div class="t-r"><span>Kumulatif</span><b>${fmt1(d.cum)}%</b></div>`;
+  t.style.opacity=1;
+  const w=t.offsetWidth, h=t.offsetHeight;
+  let x=e.clientX+14, yy=e.clientY-h-10;
+  if(x+w>innerWidth-8) x=e.clientX-w-14;
+  if(yy<8) yy=e.clientY+16;
+  t.style.left=x+"px"; t.style.top=yy+"px";
+}
+function hideTip(){ $("#tip").style.opacity=0; }
+function niceMax(v){
+  if(v<=0) return 1;
+  const e=Math.pow(10,Math.floor(Math.log10(v))), f=v/e;
+  const m = f<=1?1 : f<=2?2 : f<=2.5?2.5 : f<=5?5 : 10;
+  return m*e;
+}
+
+/* ==================================================================
+   CHART: TREN BULANAN
+   ================================================================== */
+function drawTrend(rows){
+  const el=$("#trend"); el.innerHTML="";
+  const m=new Map();
+  rows.forEach(r=>{
+    const k=r.y*12+r.mo;
+    let a=m.get(k); if(!a){a={k,y:r.y,mo:r.mo,freq:0,dur:0};m.set(k,a);}
+    a.freq++; if(r.dur!=null)a.dur+=r.dur;
+  });
+  const d=Array.from(m.values()).sort((a,b)=>a.k-b.k);
+  if(!d.length){ el.innerHTML='<div class="state"><p>Tidak ada data.</p></div>'; return; }
+
+  const metric=S.metric;
+  const ML=52,MR=18,MT=20,MB=34,PH=196;
+  const W=Math.max(el.parentElement.clientWidth-2, ML+MR+d.length*56);
+  const PW=W-ML-MR, step=PW/d.length;
+  const max=Math.max(...d.map(x=>x[metric]))||1, nice=niceMax(max);
+  const y=v=>MT+PH-(v/nice)*PH;
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("class","chart"); svg.setAttribute("width",W); svg.setAttribute("height",MT+PH+MB);
+  const add=(t,a,txt)=>{const n=document.createElementNS(NS,t);for(const k in a)n.setAttribute(k,a[k]);if(txt!=null)n.textContent=txt;svg.appendChild(n);return n;};
+  for(let i=0;i<=4;i++){
+    const v=nice*i/4,yy=y(v);
+    add("line",{x1:ML,x2:ML+PW,y1:yy,y2:yy,class:"gridline"});
+    add("text",{x:ML-8,y:yy+3.5,class:"tick","text-anchor":"end"},fmtI(v));
+  }
+  add("line",{x1:ML,x2:ML+PW,y1:MT+PH,y2:MT+PH,class:"axisline"});
+  const bw=Math.min(step*0.55,34);
+  d.forEach((x,i)=>{
+    const cx=ML+step*i+step/2, v=x[metric], h=Math.max(1,(v/nice)*PH);
+    add("rect",{x:cx-bw/2,y:MT+PH-h,width:bw,height:h,rx:4,fill:"var(--s1)",class:"bar"});
+    add("text",{x:cx,y:MT+PH+15,class:"catlab","text-anchor":"middle"},MONTHS[x.mo]);
+    const hit=add("rect",{x:ML+step*i,y:MT,width:step,height:PH,fill:"transparent"});
+    hit.addEventListener("mousemove",e=>showTip(e,{k:MONTHS[x.mo]+" "+x.y,freq:x.freq,dur:x.dur,cum:0},metric));
+    hit.addEventListener("mouseleave",hideTip);
+  });
+  el.appendChild(svg);
+}
+
+/* ==================================================================
+   RENDER
+   ================================================================== */
+function render(){
+  const rows=filtered();
+  const scoped = S.drill ? rows.filter(r=>r.major===S.drill) : rows;
+
+  renderKPI(rows);
+  renderRangeNote(rows);
+
+  const pM=pareto(rows,"major",S.metric,S.topN);
+  $("#pTitle").textContent = "Pareto — Major Component";
+  $("#pSubtitle").textContent =
+    `${fmtI(pM.all.length)} kategori · ${vitalText(pM)} · metrik: ${S.metric==="freq"?"frekuensi kejadian":"total durasi (jam)"}`;
+  drawPareto("#paretoMajor",pM,S.metric,{onPick:k=>{ S.drill = (S.drill===k?null:k); render(); }});
+
+  const pS=pareto(scoped,"sub",S.metric,S.topN);
+  $("#dSubtitle").innerHTML = S.drill
+    ? `Difilter pada <b>${esc(S.drill)}</b> — ${fmtI(scoped.length)} kejadian.`
+    : "Semua major component. Klik salah satu batang di atas untuk menyaring.";
+  $("#btnClearDrill").hidden = !S.drill;
+  drawPareto("#paretoSub",pS,S.metric,{h:236});
+
+  renderBlok(rows);
+  renderUnits(rows);
+  drawTrend(rows);
+  renderQuality(rows);
+  renderDetail(rows);
+  renderFooter();
+}
+function vitalText(p){
+  const n=p.all.filter(x=>x.cum<=80.0001).length;
+  const pct=p.all.length? n/p.all.length*100:0;
+  return `${n} kategori (${fmt1(pct)}%) menyumbang 80% masalah`;
+}
+function renderRangeNote(rows){
+  const [a,b]=periodRange();
+  const f=d=>{const x=new Date(d);return `${String(x.getUTCDate()).padStart(2,"0")} ${MONTHS[x.getUTCMonth()]} ${x.getUTCFullYear()}`;};
+  const lbl={YTD:"Year to date",MTD:"Month to date",WTD:"Week to date",CUSTOM:"Periode kustom"}[S.period];
+  $("#rangeNote").innerHTML = `<b style="color:var(--ink-2)">${lbl}</b> · ${f(a)} – ${f(b)} · ${fmtI(rows.length)} kejadian`;
+}
+function renderKPI(rows){
+  const freq=rows.length;
+  const withDur=rows.filter(r=>r.dur!=null);
+  const dur=withDur.reduce((s,r)=>s+r.dur,0);
+  const mttr=withDur.length? dur/withDur.length : 0;
+  const units=new Set(rows.map(r=>r.id)).size;
+  const [a,b]=periodRange();
+  const days=Math.max(1,Math.round((b-a)/86400000));
+  const cards=[
+    {l:"Frekuensi Breakdown",v:fmtI(freq),u:"kejadian",s:`${fmt1(freq/days)} per hari · ${days} hari`,c:"var(--s1)"},
+    {l:"Total Downtime",v:fmtI(dur),u:"jam",s:`${fmt1(dur/24)} hari-unit · ${fmtI(withDur.length)} data lengkap`,c:"var(--s2)"},
+    {l:"MTTR",v:fmt1(mttr),u:"jam",s:"rata-rata per kejadian",c:"var(--s4)"},
+    {l:"Unit Terdampak",v:fmtI(units),u:"unit",s:`${fmt1(units?freq/units:0)} kejadian per unit`,c:"var(--s3)"},
+  ];
+  $("#kpis").innerHTML=cards.map(c=>
+    `<div class="kpi" style="--bar:${c.c}">
+       <div class="k-lab">${c.l}</div>
+       <div class="k-val">${c.v}<small>${c.u}</small></div>
+       <div class="k-sub">${c.s}</div>
+     </div>`).join("");
+}
+function renderBlok(rows){
+  const blocks=Array.from(new Set(rows.map(r=>r.blok))).sort((a,b)=>(a==null?1e9:a)-(b==null?1e9:b));
+  if(!blocks.length){ $("#blokGrid").innerHTML='<div class="state"><p>Tidak ada data.</p></div>'; return; }
+  const dim = S.blokDim==="major" ? "major" : "sub";
+  $("#blokGrid").innerHTML = blocks.map(bv=>{
+    const sub=rows.filter(r=>r.blok===bv);
+    const a=agg(sub,dim);
+    const byF=a.slice().sort((x,y)=>y.freq-x.freq).slice(0,5);
+    const byD=a.slice().sort((x,y)=>y.dur-x.dur).slice(0,5);
+    const maxF=byF[0]?byF[0].freq:1, maxD=byD[0]?byD[0].dur:1;
+    const list=(arr,max,key,suf)=> arr.length? arr.map(x=>`
+        <div class="blok-row">
+          <div class="nm" title="${esc(x.k)}">${esc(x.k)}
+            <div class="blok-bar" style="width:${Math.max(2,(x[key]/max)*100)}%"></div>
+          </div>
+          <div class="vl">${key==="freq"?fmtI(x.freq)+"×":fmtH(x.dur)+" j"}</div>
+        </div>`).join("") : '<div class="blok-empty">tidak ada data</div>';
+    return `<div class="blok">
+      <div class="blok-hd"><b>${esc(blokLabel(bv))}</b><span>${fmtI(sub.length)} kejadian</span></div>
+      <div class="blok-sec"><h4>Top Frekuensi</h4>${list(byF,maxF,"freq")}</div>
+      <div class="blok-sec"><h4>Top Durasi</h4>${list(byD,maxD,"dur")}</div>
+    </div>`;
+  }).join("");
+}
+function renderUnits(rows){
+  const a=agg(rows,"id").sort((x,y)=>y[S.metric]-x[S.metric]).slice(0,15);
+  const max=a[0]?a[0][S.metric]:1;
+  $("#tblUnit").innerHTML =
+    `<thead><tr><th style="width:34px">#</th><th>Unit</th><th class="num">Freq</th><th class="num">Durasi</th><th class="num">MTTR</th></tr></thead><tbody>`
+    + (a.length? a.map((x,i)=>`<tr>
+        <td><span class="rankpill${i<3?" top":""}">${i+1}</span></td>
+        <td class="strong">${esc(x.k)}
+          <div class="blok-bar" style="width:${Math.max(2,(x[S.metric]/max)*100)}%;max-width:150px"></div></td>
+        <td class="num">${fmtI(x.freq)}</td>
+        <td class="num">${fmtH(x.dur)} j</td>
+        <td class="num">${fmt1(x.freq?x.dur/x.freq:0)}</td></tr>`).join("")
+      : `<tr><td colspan="5" style="text-align:center;padding:26px">Tidak ada data.</td></tr>`)
+    + `</tbody>`;
+}
+function renderQuality(rows){
+  const q=S.quality;
+  const inPeriod=rows.length;
+  const noDur=rows.filter(r=>r.dur==null).length;
+  const pct=n=>q.total? (n/q.total*100):0;
+  const gap=q.cmp? (q.sumCalc-q.sumSheet) : 0;
+  const topVar = Array.from(q.variants.entries())
+    .sort((a,b)=>b[1].size-a[1].size).slice(0,4)
+    .map(([k,v])=>`<b>${esc(k)}</b> ← ${Array.from(v).map(esc).join(", ")}`).join("<br>");
+  const items=[
+    {v:fmtI(q.total), l:"Baris terbaca", d:`Dari sheet <em>Rekap All ( formula )</em>. ${fmtI(inPeriod)} masuk periode & filter aktif.`, c:"ok"},
+    {v:fmtI(q.merged), l:"Baris disatukan ejaannya",
+     d:`${fmtI(q.rawNames.size)} ejaan berbeda di kolom MAJOR COMPONENT disatukan jadi ${fmtI(q.canonNames.size)} nama.`
+       + (topVar?`<div style="margin-top:6px;line-height:1.6">${topVar}</div>`:"")
+       + `<div style="margin-top:6px">Matikan lewat centang <em>“Satukan ejaan komponen”</em> untuk lihat versi mentahnya.</div>`,
+     c:q.merged>0?"warn":"ok"},
+    {v:fmtI(q.wrapped), l:"Durasi terpotong 24 jam", d:`Kolom DURATION di sheet kehilangan bagian hari (format jam biasa, bukan <code>[h]:mm:ss</code>). Dashboard menghitung ulang dari selisih waktu.`, c:q.wrapped>0?"bad":"ok"},
+    {v:fmtH(gap)+" jam", l:"Selisih vs kolom DURATION", d:`Total durasi hasil hitung ulang dikurangi total kolom DURATION, pada ${fmtI(q.cmp)} baris yang bisa dibandingkan.`, c:Math.abs(gap)>1?"warn":"ok"},
+    {v:fmtI(q.noClose), l:"Belum ada SPK close", d:`Tanggal close kosong — kejadian masih open atau belum diinput. Ikut hitungan frekuensi, tidak ikut durasi.`, c:q.noClose>0?"warn":"ok"},
+    {v:fmtI(q.badDate), l:"Tanggal close tidak valid", d:`Format tanggal salah (contoh tahun 5 digit). Dicek ulang di sheet.`, c:q.badDate>0?"bad":"ok"},
+    {v:fmtI(q.negative), l:"Close lebih awal dari breakdown", d:`Durasi negatif — urutan tanggal terbalik.`, c:q.negative>0?"bad":"ok"},
+    {v:fmtI(q.extreme), l:`Durasi > ${CONFIG.MAX_DAYS} hari`, d:`Kemungkinan salah input tanggal, bukan breakdown sungguhan. Dikecualikan dari agregat durasi.`, c:q.extreme>0?"warn":"ok"},
+    {v:fmtI(q.noSite), l:"Baris tanpa SITE", d:`${fmt1(pct(q.noSite))}% dari total. Muncul sebagai kategori “(kosong)” di filter.`, c:q.noSite>0?"warn":"ok"},
+  ];
+  $("#quality").innerHTML=items.map(i=>
+    `<div class="q ${i.c}"><div class="q-v">${i.v}</div><div class="q-l">${i.l}</div><div class="q-d">${i.d}</div></div>`).join("");
+}
+function renderDetail(rows){
+  const s=S.search.trim().toLowerCase();
+  let d=rows;
+  if(s) d=rows.filter(r=>(r.id+" "+r.major+" "+r.sub+" "+r.damage+" "+r.model+" "+r.site).toLowerCase().includes(s));
+  d=d.slice().sort((a,b)=>b.t-a.t);
+  const show=d.slice(0,300);
+  $("#detCount").textContent=`${fmtI(d.length)} kejadian${d.length>300?" — menampilkan 300 terbaru":""}`;
+  const dt=t=>{const x=new Date(t);return `${String(x.getUTCDate()).padStart(2,"0")}/${String(x.getUTCMonth()+1).padStart(2,"0")}/${x.getUTCFullYear()}`;};
+  $("#tblDetail").innerHTML =
+    `<thead><tr><th>Tanggal</th><th>Unit</th><th>Model</th><th>Site</th><th>Major Component</th><th>Sub-Component</th><th>Damage</th><th class="num">Blok HM</th><th class="num">Durasi</th></tr></thead><tbody>`
+    + (show.length? show.map(r=>`<tr>
+        <td>${dt(r.t)}</td><td class="strong">${esc(r.id)}</td><td>${esc(r.model)}</td><td>${esc(r.site)}</td>
+        <td>${esc(r.major)}</td><td>${esc(r.sub)}</td><td>${esc(r.damage)}</td>
+        <td class="num">${r.blok!=null?esc(blokLabel(r.blok)):"—"}</td>
+        <td class="num">${r.dur!=null?fmt1(r.dur)+" j":'<span style="color:var(--warn)">—</span>'}</td></tr>`).join("")
+      : `<tr><td colspan="9" style="text-align:center;padding:26px">Tidak ada hasil.</td></tr>`)
+    + `</tbody>`;
+}
+function renderFooter(){
+  const ld=S.loadedAt? S.loadedAt.toLocaleString("id-ID",{dateStyle:"medium",timeStyle:"short"}) : "—";
+  const last=S.lastDate? `${String(S.lastDate.getUTCDate()).padStart(2,"0")} ${MONTHS[S.lastDate.getUTCMonth()]} ${S.lastDate.getUTCFullYear()}` : "—";
+  $("#ftr").innerHTML=`Data terakhir di sheet: <b style="color:var(--ink-2)">${last}</b> · Dimuat: ${ld} · ${fmtI(S.rows.length)} baris · jalur ${esc(S.via||"—")}`;
+}
+
+/* ==================================================================
+   EVENTS
+   ================================================================== */
+$$(".seg [data-p]").forEach(b=>b.addEventListener("click",()=>{
+  S.period=b.dataset.p;
+  $$(".seg [data-p]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  const cus=S.period==="CUSTOM";
+  $("#wrapFrom").hidden=!cus; $("#wrapTo").hidden=!cus;
+  if(cus && !S.from){
+    const [a,b2]=periodRange();
+    S.from=new Date(a).toISOString().slice(0,10); S.to=new Date(b2).toISOString().slice(0,10);
+    $("#fFrom").value=S.from; $("#fTo").value=S.to;
+  }
+  render();
+}));
+$$(".seg [data-m]").forEach(b=>b.addEventListener("click",()=>{
+  S.metric=b.dataset.m;
+  $$(".seg [data-m]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+$$(".seg [data-n]").forEach(b=>b.addEventListener("click",()=>{
+  S.topN=+b.dataset.n;
+  $$(".seg [data-n]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+$("#fSite").addEventListener("change",e=>{S.site=e.target.value;render();});
+$("#fModel").addEventListener("change",e=>{S.model=e.target.value;render();});
+$("#fBlok").addEventListener("change",e=>{S.blok=e.target.value;render();});
+$("#fCluster").addEventListener("change",e=>{S.cluster=e.target.value;render();});
+$("#fFrom").addEventListener("change",e=>{S.from=e.target.value;render();});
+$("#fTo").addEventListener("change",e=>{S.to=e.target.value;render();});
+$("#fSearch").addEventListener("input",e=>{S.search=e.target.value;renderDetail(filtered());});
+$("#btnReset").addEventListener("click",()=>{
+  S.site=S.model=S.blok=S.cluster=""; S.drill=null; S.search="";
+  $("#fSite").value="";$("#fModel").value="";$("#fBlok").value="";$("#fCluster").value="";$("#fSearch").value="";
+  render();
+});
+$("#btnClearDrill").addEventListener("click",()=>{S.drill=null;render();});
+$("#fCanon").addEventListener("change",e=>{S.canon=e.target.checked;S.drill=null;applyCanon();buildFilters();restoreFilters();render();});
+$$(".seg [data-b]").forEach(b=>b.addEventListener("click",()=>{
+  S.blokDim=b.dataset.b;
+  $$(".seg [data-b]").forEach(x=>x.setAttribute("aria-pressed",x===b));
+  render();
+}));
+$("#btnReload").addEventListener("click",loadData);
+$("#btnTheme").addEventListener("click",()=>{
+  const cur=document.documentElement.getAttribute("data-theme");
+  const next=cur==="dark"?"light":"dark";
+  document.documentElement.setAttribute("data-theme",next);
+  try{localStorage.setItem("pareto-theme",next);}catch(e){}
+  render();
+});
+$("#btnCsv").addEventListener("click",()=>{
+  const rows=filtered();
+  const head=["TANGGAL","UNIT","MODEL","SITE","CLUSTER","MAJOR COMPONENT","SUB-COMPONENT","DAMAGE","HM","BLOK HM","DURASI (JAM)"];
+  const q=s=>'"'+String(s==null?"":s).replace(/"/g,'""')+'"';
+  const body=rows.map(r=>{
+    const x=new Date(r.t);
+    return [`${String(x.getUTCDate()).padStart(2,"0")}/${String(x.getUTCMonth()+1).padStart(2,"0")}/${x.getUTCFullYear()}`,
+      r.id,r.model,r.site,r.cluster,r.major,r.sub,r.damage,r.hm??"",r.blok??"",r.dur!=null?r.dur.toFixed(2):""].map(q).join(",");
+  });
+  const blob=new Blob(["﻿"+[head.map(q).join(","),...body].join("\r\n")],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`pareto-breakdown-${S.period.toLowerCase()}-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+let rt; addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>{if(!$("#app").hidden)render();},180);});
+
+$("#setupGo").addEventListener("click",()=>{
+  const p=parseSheetUrl($("#setupUrl").value);
+  if(!p) return showSetup("Link tidak dikenali. Pastikan bentuknya https://docs.google.com/spreadsheets/d/…");
+  saveSource(p.id,p.gid); loadData();
+});
+$("#setupUrl").addEventListener("keydown",e=>{ if(e.key==="Enter") $("#setupGo").click(); });
+
+/* init */
+(function(){
+  try{const t=localStorage.getItem("pareto-theme"); if(t) document.documentElement.setAttribute("data-theme",t);}catch(e){}
+  $("#ttl").textContent=CONFIG.TITLE;
+  $("#sub").textContent=CONFIG.COMPANY;
+  $("#logoMark").textContent=CONFIG.MARK;
+  document.title=`${CONFIG.TITLE} — ${CONFIG.COMPANY}`;
+  loadData();
+})();
+</script>
+</body>
+</html>
